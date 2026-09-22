@@ -61,8 +61,12 @@ localhost ansible_connection=local ansible_user=amit app_name=myapp app_port=808
 └── group_vars/
     └── local.yml
 ```
+```
+mkdir group_vars
 
-**File: `group_vars/local.yml`**
+```
+
+**File: ` vi group_vars/local.yml`**
 ```yaml
 ---
 package_name: nginx
