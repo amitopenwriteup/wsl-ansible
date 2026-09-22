@@ -17,8 +17,8 @@ Learn different ways to define and use variables in Ansible playbooks.
   vars:
     package_name: apache2
     service_name: apache2
-    port: 80
-  
+    http_port: 80
+
   tasks:
     - name: Install package
       ansible.builtin.apt:
@@ -26,7 +26,7 @@ Learn different ways to define and use variables in Ansible playbooks.
         state: present
     - name: Display info
       ansible.builtin.debug:
-        msg: "Service {{ service_name }} running on port {{ port }}"
+        msg: "Service {{ service_name }} running on port {{ http_port }}"
 ```
 
 ---
@@ -61,17 +61,16 @@ localhost ansible_connection=local ansible_user=amit app_name=myapp app_port=808
 └── group_vars/
     └── local.yml
 ```
-```
+```bash
 mkdir group_vars
-
 ```
 
-**File: ` vi group_vars/local.yml`**
+**File: `group_vars/local.yml`**
 ```yaml
 ---
 package_name: nginx
 service_name: nginx
-port: 80
+http_port: 80
 admin_email: admin@example.com
 ```
 
@@ -92,12 +91,12 @@ admin_email: admin@example.com
 
 **Run playbook with variables:**
 ```bash
-ansible-playbook lab2.yaml -e "package_name=nginx port=8080"
+ansible-playbook lab2.yaml -e "package_name=nginx http_port=8080"
 ```
 
 **Multiple variables:**
 ```bash
-ansible-playbook lab2.yaml -e "package_name=nginx port=8080 service_name=nginx"
+ansible-playbook lab2.yaml -e "package_name=nginx http_port=8080 service_name=nginx"
 ```
 
 ---
@@ -109,7 +108,7 @@ ansible-playbook lab2.yaml -e "package_name=nginx port=8080 service_name=nginx"
 ---
 package_name: apache2
 service_name: apache2
-port: 80
+http_port: 80
 max_connections: 1000
 enable_ssl: true
 ```
@@ -121,7 +120,7 @@ enable_ssl: true
   become: true
   vars_files:
     - vars.yml
-  
+
   tasks:
     - name: Install package
       ansible.builtin.apt:
@@ -144,7 +143,7 @@ packages:
   - wget
 
 service_name: apache2
-port: 80
+http_port: 80
 state: present
 ```
 
@@ -159,33 +158,33 @@ state: present
   become: true
   vars_files:
     - vars.yml
-  
+
   vars:
     environment_type: production
-  
+
   tasks:
     - name: Update apt cache
       ansible.builtin.apt:
         update_cache: yes
-    
+
     - name: Install packages
       ansible.builtin.apt:
         name: "{{ item }}"
         state: "{{ state }}"
       loop: "{{ packages }}"
-    
+
     - name: Start service
       ansible.builtin.systemd:
         name: "{{ service_name }}"
         state: started
         enabled: yes
-    
+
     - name: Display variables
       ansible.builtin.debug:
         msg: |
           Environment: {{ environment_type }}
           Service: {{ service_name }}
-          Port: {{ port }}
+          Port: {{ http_port }}
 ```
 
 ---
@@ -207,7 +206,7 @@ localhost ansible_connection=local ansible_user=amit
 ansible-playbook -i inventory.ini lab2.yaml
 
 # With extra variables
-ansible-playbook -i inventory.ini lab2.yaml -e "port=8080"
+ansible-playbook -i inventory.ini lab2.yaml -e "http_port=8080"
 
 # Verbose output
 ansible-playbook -i inventory.ini lab2.yaml -v
@@ -239,7 +238,7 @@ vars:
   server:
     name: webserver1
     ip: 192.168.1.10
-    port: 80
+    http_port: 80
 ```
 
 ### Using Lists
@@ -257,7 +256,7 @@ tasks:
 tasks:
   - name: Display server info
     ansible.builtin.debug:
-      msg: "Server {{ server.name }} at {{ server.ip }}:{{ server.port }}"
+      msg: "Server {{ server.name }} at {{ server.ip }}:{{ server.http_port }}"
 ```
 
 ---
@@ -334,10 +333,10 @@ nano lab2.yaml
 ansible-playbook -i inventory.ini lab2.yaml
 
 # Run with extra variables
-ansible-playbook -i inventory.ini lab2.yaml -e "port=8080"
+ansible-playbook -i inventory.ini lab2.yaml -e "http_port=8080"
 
 # List all variables
-ansible-playbook -i inventory.ini lab2.yaml -e "port=8080" --extra-vars="debug=true"
+ansible-playbook -i inventory.ini lab2.yaml -e "http_port=8080" --extra-vars="debug=true"
 ```
 
 ---
