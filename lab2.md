@@ -3,13 +3,21 @@
 ## Overview
 Learn different ways to define and use variables in Ansible playbooks.
 
+> **Note:** `port` is a reserved variable name in Ansible (it collides with the
+> connection variable `ansible_port`), which triggers:
+> `[WARNING]: Found variable using reserved name: port`
+> Every example below uses `http_port` instead to avoid that warning.
+
 ---
 
 ## Variable Definition Methods
 
 ### Method 1: In Playbook (vars)
 
-**File: `lab2.yaml`**
+```bash
+vi lab2_method1.yaml
+```
+
 ```yaml
 - name: play1
   hosts: local
@@ -29,17 +37,29 @@ Learn different ways to define and use variables in Ansible playbooks.
         msg: "Service {{ service_name }} running on port {{ http_port }}"
 ```
 
+**Run:**
+```bash
+ansible-playbook -i inventory.ini lab2_method1.yaml
+```
+
 ---
 
 ### Method 2: In Inventory (host_vars)
 
-**File: `inventory.ini`**
+```bash
+vi inventory.ini
+```
+
 ```ini
 [local]
 localhost ansible_connection=local ansible_user=amit app_name=myapp app_port=8080
 ```
 
 **Usage in playbook:**
+```bash
+vi lab2_method2.yaml
+```
+
 ```yaml
 - name: play1
   hosts: local
@@ -47,6 +67,11 @@ localhost ansible_connection=local ansible_user=amit app_name=myapp app_port=808
     - name: Debug variables
       ansible.builtin.debug:
         msg: "App {{ app_name }} on port {{ app_port }}"
+```
+
+**Run:**
+```bash
+ansible-playbook -i inventory.ini lab2_method2.yaml
 ```
 
 ---
@@ -57,15 +82,16 @@ localhost ansible_connection=local ansible_user=amit app_name=myapp app_port=808
 ```
 .
 ├── inventory.ini
-├── lab2.yaml
+├── lab2_method3.yaml
 └── group_vars/
     └── local.yml
 ```
+
 ```bash
 mkdir group_vars
+vi group_vars/local.yml
 ```
 
-**File: `group_vars/local.yml`**
 ```yaml
 ---
 package_name: nginx
@@ -75,6 +101,10 @@ admin_email: admin@example.com
 ```
 
 **Usage in playbook:**
+```bash
+vi lab2_method3.yaml
+```
+
 ```yaml
 - name: play1
   hosts: local
@@ -85,25 +115,51 @@ admin_email: admin@example.com
         state: present
 ```
 
+**Run:**
+```bash
+ansible-playbook -i inventory.ini lab2_method3.yaml
+```
+
 ---
 
 ### Method 4: Command Line Variables
 
+```bash
+vi lab2_method4.yaml
+```
+
+```yaml
+- name: play1
+  hosts: local
+  become: true
+  tasks:
+    - name: Install package
+      ansible.builtin.apt:
+        name: "{{ package_name }}"
+        state: present
+    - name: Display info
+      ansible.builtin.debug:
+        msg: "Service {{ service_name }} running on port {{ http_port }}"
+```
+
 **Run playbook with variables:**
 ```bash
-ansible-playbook lab2.yaml -e "package_name=nginx http_port=8080"
+ansible-playbook -i inventory.ini lab2_method4.yaml -e "package_name=nginx http_port=8080"
 ```
 
 **Multiple variables:**
 ```bash
-ansible-playbook lab2.yaml -e "package_name=nginx http_port=8080 service_name=nginx"
+ansible-playbook -i inventory.ini lab2_method4.yaml -e "package_name=nginx http_port=8080 service_name=nginx"
 ```
 
 ---
 
 ### Method 5: Variable File (vars_files)
 
-**File: `vars.yml`**
+```bash
+vi vars_method5.yml
+```
+
 ```yaml
 ---
 package_name: apache2
@@ -113,13 +169,16 @@ max_connections: 1000
 enable_ssl: true
 ```
 
-**File: `lab2.yaml`**
+```bash
+vi lab2_method5.yaml
+```
+
 ```yaml
 - name: play1
   hosts: local
   become: true
   vars_files:
-    - vars.yml
+    - vars_method5.yml
 
   tasks:
     - name: Install package
@@ -128,13 +187,21 @@ enable_ssl: true
         state: present
 ```
 
+**Run:**
+```bash
+ansible-playbook -i inventory.ini lab2_method5.yaml
+```
+
 ---
 
 ## Complete Lab Exercise
 
 ### Step 1: Create Variables File
 
-**File: `vars.yml`**
+```bash
+vi vars_complete.yml
+```
+
 ```yaml
 ---
 packages:
@@ -151,13 +218,16 @@ state: present
 
 ### Step 2: Create Playbook
 
-**File: `lab2.yaml`**
+```bash
+vi lab2_complete.yaml
+```
+
 ```yaml
 - name: play1
   hosts: local
   become: true
   vars_files:
-    - vars.yml
+    - vars_complete.yml
 
   vars:
     environment_type: production
@@ -191,7 +261,10 @@ state: present
 
 ### Step 3: Update Inventory
 
-**File: `inventory.ini`**
+```bash
+vi inventory.ini
+```
+
 ```ini
 [local]
 localhost ansible_connection=local ansible_user=amit
@@ -203,13 +276,13 @@ localhost ansible_connection=local ansible_user=amit
 
 ```bash
 # Basic run
-ansible-playbook -i inventory.ini lab2.yaml
+ansible-playbook -i inventory.ini lab2_complete.yaml
 
 # With extra variables
-ansible-playbook -i inventory.ini lab2.yaml -e "http_port=8080"
+ansible-playbook -i inventory.ini lab2_complete.yaml -e "http_port=8080"
 
 # Verbose output
-ansible-playbook -i inventory.ini lab2.yaml -v
+ansible-playbook -i inventory.ini lab2_complete.yaml -v
 ```
 
 ---
@@ -241,22 +314,42 @@ vars:
     http_port: 80
 ```
 
-### Using Lists
-```yaml
-tasks:
-  - name: Install packages
-    ansible.builtin.apt:
-      name: "{{ item }}"
-      state: present
-    loop: "{{ packages }}"
+### Using Lists and Dictionaries Together
+
+```bash
+vi lab2_vartypes.yaml
 ```
 
-### Using Dictionaries
 ```yaml
-tasks:
-  - name: Display server info
-    ansible.builtin.debug:
-      msg: "Server {{ server.name }} at {{ server.ip }}:{{ server.http_port }}"
+- name: play1
+  hosts: local
+  vars:
+    name: "apache2"
+    description: "Web server"
+    packages:
+      - apache2
+      - nginx
+      - mysql-server
+    server:
+      name: webserver1
+      ip: 192.168.1.10
+      http_port: 80
+
+  tasks:
+    - name: Install packages
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ packages }}"
+
+    - name: Display server info
+      ansible.builtin.debug:
+        msg: "Server {{ server.name }} at {{ server.ip }}:{{ server.http_port }}"
+```
+
+**Run:**
+```bash
+ansible-playbook -i inventory.ini lab2_vartypes.yaml
 ```
 
 ---
@@ -274,46 +367,54 @@ tasks:
 **Example:**
 ```bash
 # Command line has HIGHEST priority
-ansible-playbook lab2.yaml -e "package_name=nginx"  # This wins!
+ansible-playbook -i inventory.ini lab2_method1.yaml -e "package_name=nginx"  # This wins!
 ```
 
 ---
 
 ## Debugging Variables
 
-### Print all variables
-```yaml
-- name: Debug all variables
-  ansible.builtin.debug:
-    var: vars
+```bash
+vi lab2_debug.yaml
 ```
 
-### Print specific variable
 ```yaml
-- name: Debug package name
-  ansible.builtin.debug:
-    var: package_name
+- name: play1
+  hosts: local
+  vars:
+    package_name: apache2
+  tasks:
+    - name: Debug all variables
+      ansible.builtin.debug:
+        var: vars
+
+    - name: Debug package name
+      ansible.builtin.debug:
+        var: package_name
+
+    - name: Custom message
+      ansible.builtin.debug:
+        msg: "Installing {{ package_name }} on {{ ansible_hostname }}"
 ```
 
-### Print with message
-```yaml
-- name: Custom message
-  ansible.builtin.debug:
-    msg: "Installing {{ package_name }} on {{ ansible_hostname }}"
+**Run:**
+```bash
+ansible-playbook -i inventory.ini lab2_debug.yaml
 ```
 
 ---
 
 ## Quick Reference
 
-| Method | Location | Priority |
-|--------|----------|----------|
-| vars | Playbook | Medium |
-| inventory | inventory.ini | Low |
-| group_vars | group_vars/ | Medium-Low |
-| host_vars | host_vars/ | Medium-Low |
-| vars_files | External file | Medium |
-| -e flag | Command line | Highest |
+| Method | File | Location | Priority |
+|--------|------|----------|----------|
+| vars | lab2_method1.yaml | Playbook | Medium |
+| inventory | lab2_method2.yaml | inventory.ini | Low |
+| group_vars | lab2_method3.yaml | group_vars/ | Medium-Low |
+| host_vars | — | host_vars/ | Medium-Low |
+| -e flag | lab2_method4.yaml | Command line | Highest |
+| vars_files | lab2_method5.yaml | External file | Medium |
+| complete exercise | lab2_complete.yaml | vars_files + vars | — |
 
 ---
 
@@ -323,20 +424,29 @@ ansible-playbook lab2.yaml -e "package_name=nginx"  # This wins!
 # Create directory for group vars
 mkdir -p group_vars
 
-# Create variables file
-nano vars.yml
+# Create variables files
+vi vars_method5.yml
+vi vars_complete.yml
+vi group_vars/local.yml
 
-# Create playbook
-nano lab2.yaml
+# Create playbooks
+vi lab2_method1.yaml
+vi lab2_method2.yaml
+vi lab2_method3.yaml
+vi lab2_method4.yaml
+vi lab2_method5.yaml
+vi lab2_complete.yaml
+vi lab2_vartypes.yaml
+vi lab2_debug.yaml
 
-# Run playbook
-ansible-playbook -i inventory.ini lab2.yaml
+# Run a playbook
+ansible-playbook -i inventory.ini lab2_complete.yaml
 
 # Run with extra variables
-ansible-playbook -i inventory.ini lab2.yaml -e "http_port=8080"
+ansible-playbook -i inventory.ini lab2_complete.yaml -e "http_port=8080"
 
 # List all variables
-ansible-playbook -i inventory.ini lab2.yaml -e "http_port=8080" --extra-vars="debug=true"
+ansible-playbook -i inventory.ini lab2_complete.yaml -e "http_port=8080" --extra-vars="debug=true"
 ```
 
 ---
@@ -365,9 +475,9 @@ localhost : ok=5  changed=1  unreachable=0  failed=0
 
 ## Practice Exercise
 
-1. **Create** `group_vars/local.yml` with variables
-2. **Create** `lab2.yaml` playbook
-3. **Run** playbook with default variables
-4. **Run** playbook with `-e` flag to override variables
-5. **Add** debug tasks to display all variables
+1. **Create** `group_vars/local.yml` with variables (`vi group_vars/local.yml`)
+2. **Create** `lab2_method3.yaml` playbook (`vi lab2_method3.yaml`)
+3. **Run** playbook with default variables: `ansible-playbook -i inventory.ini lab2_method3.yaml`
+4. **Run** playbook with `-e` flag to override variables: `ansible-playbook -i inventory.ini lab2_method3.yaml -e "http_port=8080"`
+5. **Add** debug tasks to display all variables (see `lab2_debug.yaml`)
 6. **Verify** priority (command line overrides file variables)
