@@ -78,7 +78,16 @@ vi lab3_loop_dicts.yaml
 ```yaml
 - name: test
   hosts: all
+  become: true
   tasks:
+    - name: Ensure groups exist
+      ansible.builtin.group:
+        name: "{{ item.groups }}"
+        state: present
+      loop:
+        - { name: "alice", groups: "sudo" }
+        - { name: "bob", groups: "developers" }
+
     - name: Create users
       ansible.builtin.user:
         name: "{{ item.name }}"
@@ -88,6 +97,10 @@ vi lab3_loop_dicts.yaml
         - { name: "alice", groups: "sudo" }
         - { name: "bob", groups: "developers" }
 ```
+> `sudo` already exists as a default group on Debian/Ubuntu, but `developers`
+> does not — `ansible.builtin.user` won't create a missing group for you, so
+> the "Ensure groups exist" task creates it first (`state: present` is a no-op
+> for `sudo` since it's already there).
 
 **Run:**
 ```bash
@@ -105,7 +118,18 @@ vi lab4_loop_control.yaml
 ```yaml
 - name: test
   hosts: all
+  become: true
   tasks:
+    - name: Ensure groups exist
+      ansible.builtin.group:
+        name: "{{ user.groups }}"
+        state: present
+      loop:
+        - { name: "alice", groups: "sudo" }
+        - { name: "bob", groups: "developers" }
+      loop_control:
+        loop_var: user
+
     - name: Create users
       ansible.builtin.user:
         name: "{{ user.name }}"
@@ -289,6 +313,33 @@ ansible-playbook -i inventory.ini lab10_when_loop.yaml
 
 ### Lab 11 — Handler fires once even with two notifying tasks
 
+`ansible.builtin.copy`'s `src:` is read from the **controller** (the machine
+running `ansible-playbook`), not the target — so these files must exist next
+to `lab11_handlers.yaml` before you run it:
+
+```bash
+vi nginx.conf
+```
+```
+# minimal nginx.conf for the lab
+events {}
+http {
+    server {
+        listen 80;
+    }
+}
+```
+
+```bash
+vi site.conf
+```
+```
+server {
+    listen 8080;
+    server_name lab11.local;
+}
+```
+
 ```bash
 vi lab11_handlers.yaml
 ```
@@ -296,7 +347,14 @@ vi lab11_handlers.yaml
 ```yaml
 - name: test
   hosts: all
+  become: true
   tasks:
+    - name: Ensure nginx is installed
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+
     - name: Copy nginx config
       ansible.builtin.copy:
         src: nginx.conf
@@ -317,12 +375,26 @@ vi lab11_handlers.yaml
 
 **Run:**
 ```bash
-ansible-playbook -i inventory.ini lab11_handlers.yaml
+ansible-playbook -i inventory.ini lab11_handlers.yaml --ask-become-pass
 ```
 
 ---
 
 ### Lab 12 — Forcing handlers to run early (`flush_handlers`)
+
+Reuses the same `nginx.conf` from Lab 11 — create it first if you haven't:
+
+```bash
+vi nginx.conf
+```
+```
+events {}
+http {
+    server {
+        listen 80;
+    }
+}
+```
 
 ```bash
 vi lab12_flush_handlers.yaml
@@ -331,7 +403,14 @@ vi lab12_flush_handlers.yaml
 ```yaml
 - name: test
   hosts: all
+  become: true
   tasks:
+    - name: Ensure nginx is installed
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+
     - name: Copy nginx config
       ansible.builtin.copy:
         src: nginx.conf
@@ -353,12 +432,27 @@ vi lab12_flush_handlers.yaml
 
 **Run:**
 ```bash
-ansible-playbook -i inventory.ini lab12_flush_handlers.yaml
+ansible-playbook -i inventory.ini lab12_flush_handlers.yaml --ask-become-pass
 ```
 
 ---
 
 ### Lab 13 — `listen`: one notify, many handlers
+
+`ansible.builtin.template` also reads its `src:` from the controller, so
+create the Jinja2 template first:
+
+```bash
+vi nginx.conf.j2
+```
+```
+events {}
+http {
+    server {
+        listen {{ http_port | default(80) }};
+    }
+}
+```
 
 ```bash
 vi lab13_listen.yaml
@@ -367,7 +461,14 @@ vi lab13_listen.yaml
 ```yaml
 - name: test
   hosts: all
+  become: true
   tasks:
+    - name: Ensure nginx is installed
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+
     - name: Deploy new config
       ansible.builtin.template:
         src: nginx.conf.j2
@@ -389,12 +490,28 @@ vi lab13_listen.yaml
 
 **Run:**
 ```bash
-ansible-playbook -i inventory.ini lab13_listen.yaml
+ansible-playbook -i inventory.ini lab13_listen.yaml --ask-become-pass
 ```
 
 ---
 
 ### Lab 14 — Workshop exercise: Reload systemd handler
+
+Create a minimal (fake, for the lab) systemd unit file first:
+
+```bash
+vi myapp.service
+```
+```
+[Unit]
+Description=My demo app
+
+[Service]
+ExecStart=/bin/true
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ```bash
 vi lab14_reload_systemd.yaml
@@ -403,6 +520,7 @@ vi lab14_reload_systemd.yaml
 ```yaml
 - name: test
   hosts: all
+  become: true
   tasks:
     - name: Copy app systemd service file
       ansible.builtin.copy:
@@ -417,7 +535,7 @@ vi lab14_reload_systemd.yaml
 
 **Run:**
 ```bash
-ansible-playbook -i inventory.ini lab14_reload_systemd.yaml
+ansible-playbook -i inventory.ini lab14_reload_systemd.yaml --ask-become-pass
 ```
 
 ---
@@ -453,6 +571,10 @@ ansible-playbook -i inventory.ini lab15_register.yaml
 
 ### Lab 16 — `block` / `rescue` / `always`
 
+This lab is self-contained: it first creates two demo scripts on the target
+(`start.sh`, which deliberately fails, and `rollback.sh`, which succeeds) so
+`block`/`rescue`/`always` has something real to react to.
+
 ```bash
 vi lab16_block_rescue_always.yaml
 ```
@@ -460,7 +582,32 @@ vi lab16_block_rescue_always.yaml
 ```yaml
 - name: test
   hosts: all
+  become: true
   tasks:
+    - name: Ensure /opt/app exists
+      ansible.builtin.file:
+        path: /opt/app
+        state: directory
+        mode: "0755"
+
+    - name: Deploy a start script that deliberately fails (for the demo)
+      ansible.builtin.copy:
+        dest: /opt/app/start.sh
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          echo "Attempting to start the app..."
+          exit 1
+
+    - name: Deploy a rollback script that succeeds (for the demo)
+      ansible.builtin.copy:
+        dest: /opt/app/rollback.sh
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          echo "Rolling back changes..."
+          exit 0
+
     - name: Attempt risky operation with error handling
       block:
         - name: Try to start the app
@@ -476,8 +623,12 @@ vi lab16_block_rescue_always.yaml
 
 **Run:**
 ```bash
-ansible-playbook -i inventory.ini lab16_block_rescue_always.yaml
+ansible-playbook -i inventory.ini lab16_block_rescue_always.yaml --ask-become-pass
 ```
+
+Expected recap: `start.sh` fails, `rescue` runs `rollback.sh` and succeeds, so
+the play ends `ok` overall with `rescued=1` — no `failed` count, since the
+rescue itself succeeded this time.
 
 ---
 
