@@ -24,12 +24,6 @@ Learn different ways to define and use variables in Ansible playbooks.
       ansible.builtin.apt:
         name: "{{ package_name }}"
         state: present
-    
-    - name: Start service
-      ansible.builtin.systemd:
-        name: "{{ service_name }}"
-        state: started
-    
     - name: Display info
       ansible.builtin.debug:
         msg: "Service {{ service_name }} running on port {{ port }}"
