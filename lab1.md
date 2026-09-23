@@ -81,7 +81,7 @@ nano ansible.cfg
 
 ### Run playbook:
 ```bash
-ansible-playbook -i inventory.ini lab1.yaml
+ansible-playbook lab1.yaml
 ```
 
 ### Check status:
