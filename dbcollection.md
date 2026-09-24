@@ -24,6 +24,7 @@ vi mysql_setup.yml
 
 ```yaml
 ---
+---
 - name: Simulate RDS MySQL setup
   hosts: all
   become: yes
@@ -32,6 +33,7 @@ vi mysql_setup.yml
     db_name: "testdb"
     db_user: "dbuser"
     db_user_password: "UserPass123!"
+    mysql_socket: "{{ '/var/lib/mysql/mysql.sock' if ansible_os_family == 'RedHat' else '/run/mysqld/mysqld.sock' }}"
 
   tasks:
     - name: Ensure Python 3, pip, and PyMySQL are installed
@@ -58,7 +60,7 @@ vi mysql_setup.yml
         name: root
         host_all: yes
         password: "{{ mysql_root_password }}"
-        login_unix_socket: /var/lib/mysql/mysql.sock
+        login_unix_socket: "{{ mysql_socket }}"
       ignore_errors: true
 
     - name: Create .my.cnf for root so future logins don't need -p
@@ -75,6 +77,7 @@ vi mysql_setup.yml
         state: present
         login_user: root
         login_password: "{{ mysql_root_password }}"
+        login_unix_socket: "{{ mysql_socket }}"
 
     - name: Create a MySQL user with privileges
       community.mysql.mysql_user:
@@ -85,6 +88,7 @@ vi mysql_setup.yml
         state: present
         login_user: root
         login_password: "{{ mysql_root_password }}"
+        login_unix_socket: "{{ mysql_socket }}"
 ```
 
 ---
