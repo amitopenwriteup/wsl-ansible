@@ -118,10 +118,3 @@ ansible-playbook mysql_setup.yml
 
 ---
 
-## Verify
-
-```bash
-ansible all -b -m command -a "systemctl is-active mariadb"
-ansible all -b -m shell -a "mysql -e 'SHOW DATABASES;'"
-ansible all -b -m shell -a "mysql -e \"SELECT user,host FROM mysql.user;\""
-```
