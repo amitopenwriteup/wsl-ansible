@@ -240,8 +240,8 @@ vi lab8_when_or.yaml
   tasks:
     - name: Run on CentOS or RedHat
       ansible.builtin.debug:
-        msg: "Matched CentOS or RedHat!"
-      when: ansible_facts['distribution'] == "CentOS" or ansible_facts['distribution'] == "RedHat"
+        msg: "Matched Debian or Ubuntu!"
+      when: ansible_facts['distribution'] == "Debian" or ansible_facts['distribution'] == "Ubuntu"
 ```
 
 **Run:**
