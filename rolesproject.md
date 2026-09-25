@@ -343,18 +343,7 @@ Inside vi: press `gg` then `dG` to clear the old content, `i` to insert, paste t
     - role: nginx
 ```
 
-Override a default when calling the role:
 
-```yaml
-- name: test
-  hosts: all
-  become: true
-  roles:
-    - role: nginx
-      vars:
-        nginx_restart_state: reloaded
-        nginx_update_cache: false
-```
 
 Final project layout:
 
