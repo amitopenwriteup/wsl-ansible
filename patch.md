@@ -1,6 +1,210 @@
 # Workshop: Configuration Management & Patch Management on Ubuntu with Ansible
 
+**Format:** Instructor-led, hands-on, build-it-yourself
+**Target OS:** Ubuntu 22.04 / 24.04 LTS
+**Duration:** ~4 hours (including one break)
+**Level:** Beginner → Intermediate Ansible
+**You will build:** two playbooks, one task at a time
+- `baseline.yml` – enforces configuration and detects **config drift**
+- `patch.yml` – a **scalable, repeatable patching workflow** with batching, checks, reboots, and reports
 
+---
+
+## 0. How This Workshop Works
+
+You will **not** be handed finished playbooks. You add **one task at a time**, run it, and understand why it exists.
+
+Every step follows the same loop:
+
+| Phase | What you do |
+|---|---|
+| **Requirement** | Read the problem the task must solve |
+| **Research** | Find the right module on the Ansible docs site or with `ansible-doc` |
+| **Predict** | Write down what you think will happen (`ok`, `changed`, or failed) |
+| **Add & Run** | Add the task to your playbook and run it |
+| **Explain** | Compare with your prediction and explain the difference to your partner |
+
+**Working style:** pair up. One person types (*driver*), the other reads the docs (*navigator*). Swap after every step.
+
+**Rules of the room**
+
+1. Prefer a **module** over `command`/`shell`. Use `command` only when no module exists.
+2. Use fully qualified names: `ansible.builtin.apt`, not `apt`.
+3. After every step, run the playbook **twice**. The second run should show `changed=0` for that task (idempotency).
+4. Never skip **Predict**. The learning is in the gap between your guess and the result.
+
+
+
+
+---
+
+## 2. Concepts
+
+### 2.1 What is configuration drift?
+
+**Configuration drift** is the gradual difference between the **desired state** (what your code says) and the **actual state** (what is on the server).
+
+Typical causes:
+
+- A person edits a file by hand "just to fix it quickly"
+- A package upgrade overwrites a config file
+- A service is stopped and never restarted
+- A hotfix is applied to one server but not the others
+- An old package that should be removed comes back
+
+Why it matters: drifted servers behave differently, fail audits, and make patching unpredictable. "It works on server A but not on server B" is usually drift.
+
+### 2.2 Why Ansible fits
+
+Ansible modules are **declarative and idempotent**: you describe the end state (`state: present`, `mode: "0644"`) and the module changes the system only if it differs. That gives you three useful behaviours:
+
+| Behaviour | How you use it for drift |
+|---|---|
+| Run twice, no change | Proof the server matches the desired state |
+| `--check` (dry run) | **Detect** drift without changing anything |
+| `--diff` | Show **exactly what** drifted (file content, permissions) |
+
+### 2.3 Enforcement patterns
+
+| Pattern | What happens | When to use | Trade-off |
+|---|---|---|---|
+| **1. Detect only** | `--check --diff`, read the report | Audits, first rollout, production | Nothing gets fixed automatically |
+| **2. Detect and alert** | Detect-only run on a schedule; alert if `changed` > 0 | Prod with change control | Needs alert plumbing |
+| **3. Enforce (push)** | Scheduled full run that fixes drift | Dev, staging, low-risk baselines | A wrong baseline gets pushed everywhere fast |
+| **4. Enforce on change** | Run when code merges (CI/CD) or a ticket is approved | GitOps-style teams | Drift between merges is unseen unless combined with pattern 2 |
+| **5. Pull-based** | Each host runs `ansible-pull` from Git on a timer | Large or hard-to-reach fleets | Harder central reporting |
+
+A common mature setup: **pattern 3 for low-risk hosts, pattern 2 in production, pattern 4 to roll out approved changes.**
+
+### 2.4 Patch management design principles
+
+A patch playbook that "just runs `apt upgrade` everywhere" is not a process. A scalable, repeatable design has these properties:
+
+| Principle | Meaning | Ansible feature |
+|---|---|---|
+| **Batching** | Never patch everything at once | `serial` |
+| **Fail-safe** | Stop the rollout when something breaks | `any_errors_fatal`, `block/rescue` |
+| **Pre-checks** | Confirm the host is fit to patch | `assert`, `package_facts`, `service_facts` |
+| **Holds** | Some packages must not move | `dpkg_selections` |
+| **Controlled reboots** | Reboot only when required, and only if allowed | `stat`, `reboot`, variables |
+| **Post-checks** | Prove critical services survived | `service_facts`, `assert` |
+| **Evidence** | Every host produces a record | `copy`, `fetch` |
+| **Repeatable** | Same code, different variables | `-e`, roles, tags |
+
+### 2.5 Aligning with your existing patching automation
+
+You rarely start from zero. Most teams already have cron scripts, `unattended-upgrades`, or a patching tool plus a change-approval process. The goal is to make it **more scalable and repeatable**, not to throw it away.
+
+| If you already have | Keep | Ansible adds |
+|---|---|---|
+| Cron-driven `apt-get upgrade` scripts | The schedule and maintenance windows | Idempotent tasks, per-host reports, batching, safe failure |
+| `unattended-upgrades` on hosts | Automatic security patching | Its config managed as code (no drift), reboot orchestration, verification |
+| A patch management tool (for example Canonical Landscape) | Approval and inventory workflow | Pre/post checks and reboot control around it |
+| A change/ticket system | Approvals and change windows | Ticket ID passed in with `-e`, recorded in the report |
+
+**Worksheet – map your process (5 minutes, discuss with your partner):**
+
+| Question | Your answer |
+|---|---|
+| How are patches applied today? (script, tool, manual) | |
+| Who approves, and when is the window? | |
+| Which hosts must be patched first / last? | |
+| Which packages must never be upgraded automatically? | |
+| How do you know a patch run succeeded? | |
+| What is the rollback plan? | |
+
+You will translate these answers into variables and checks in Part B.
+
+---
+
+## 3. Lab Setup
+
+### 3.1 Requirements
+
+| Item | Details |
+|---|---|
+| Control node | Any Linux/macOS/WSL host with Ansible 2.14+ |
+| Target hosts | 1–3 Ubuntu VMs (one is enough) |
+| Access | SSH key login, user with passwordless `sudo` |
+| Network | Targets can reach the control node on TCP 8000 |
+
+### 3.2 Project layout
+
+```bash
+mkdir ansible-workshop && cd ansible-workshop
+mkdir -p templates artifacts reports
+touch ansible.cfg inventory.ini vars.yml baseline.yml patch.yml
+```
+
+Target layout at the end:
+
+```text
+ansible-workshop/
+├── ansible.cfg
+├── inventory.ini
+├── vars.yml
+├── baseline.yml
+├── patch.yml
+├── templates/
+│   └── 99-baseline.conf.j2
+├── artifacts/
+│   └── issue.net
+└── reports/
+```
+
+### 3.3 `ansible.cfg`
+
+```ini
+[defaults]
+inventory = inventory.ini
+host_key_checking = False
+interpreter_python = auto_silent
+retry_files_enabled = False
+```
+
+### 3.4 `inventory.ini` and variables
+
+Keep the inventory flat: one group, every host in it.
+
+```ini
+copy you inventory.ini file
+
+```
+
+Only one VM? Just keep the single host line. Everything still works.
+
+**Connectivity test**
+
+```bash
+ansible local -m ansible.builtin.ping
+```
+
+- [ ] Every host returns `pong`
+
+Put every variable the two playbooks need in one place, `vars.yml`, and load it explicitly with `vars_files:` in each playbook (you'll add that in Step A1 and Step B1):
+
+```yaml
+# ---- configuration baseline ----
+baseline_packages:
+  - chrony
+  - curl
+  - cron
+  - ca-certificates
+baseline_absent_packages:
+  - telnet
+baseline_ssh_permit_root_login: "no"
+baseline_ssh_max_auth_tries: 3
+
+# ---- patching defaults ----
+patch_min_free_mb: 2048
+patch_hold_packages: []
+patch_allow_reboot: false
+patch_critical_services:
+  - ssh.service
+  - cron.service
+```
+
+**Why one flat file instead of per-host or per-group variable files?** For this workshop you're managing one pool of hosts, so there's nothing to split by. Everything a task needs lives in `vars.yml`; anything you want to change for a single run (for example allowing a reboot) is overridden on the command line with `-e`, which always wins over `vars_files`. If you later group hosts into environments, that's the point where variable files split by group start to earn their keep — not before.
 
 ---
 
