@@ -6,7 +6,7 @@
 **Level:** Beginner → Intermediate Ansible
 **You will build:** two playbooks, one task at a time
 - `baseline.yml` – enforces configuration and detects **config drift**
-- `patch.yml` – a **scalable, repeatable patching workflow** with rings, checks, reboots, and reports
+- `patch.yml` – a **scalable, repeatable patching workflow** with batching, checks, reboots, and reports
 
 ---
 
@@ -42,7 +42,7 @@ Copy this into your notes and tick as you go.
 - [ ] Part A – `baseline.yml` steps A1–A9
 - [ ] Drift detected and remediated (A10)
 - [ ] Part B – `patch.yml` steps B1–B11
-- [ ] Ring-based rollout demonstrated (B12)
+- [ ] Batched rollout demonstrated (B12)
 - [ ] Part C – combined run and scheduling
 - [ ] Knowledge check completed
 
@@ -98,7 +98,7 @@ Ansible modules are **declarative and idempotent**: you describe the end state (
 | **4. Enforce on change** | Run when code merges (CI/CD) or a ticket is approved | GitOps-style teams | Drift between merges is unseen unless combined with pattern 2 |
 | **5. Pull-based** | Each host runs `ansible-pull` from Git on a timer | Large or hard-to-reach fleets | Harder central reporting |
 
-A common mature setup: **pattern 3 in dev/staging, pattern 2 in production, pattern 4 to roll out approved changes.**
+A common mature setup: **pattern 3 for low-risk hosts, pattern 2 in production, pattern 4 to roll out approved changes.**
 
 ### 2.4 Patch management design principles
 
@@ -106,7 +106,6 @@ A patch playbook that "just runs `apt upgrade` everywhere" is not a process. A s
 
 | Principle | Meaning | Ansible feature |
 |---|---|---|
-| **Rings** | Patch dev first, then staging, then prod | Inventory groups, `hosts:` variable |
 | **Batching** | Never patch everything at once | `serial` |
 | **Fail-safe** | Stop the rollout when something breaks | `any_errors_fatal`, `block/rescue` |
 | **Pre-checks** | Confirm the host is fit to patch | `assert`, `package_facts`, `service_facts` |
@@ -114,7 +113,7 @@ A patch playbook that "just runs `apt upgrade` everywhere" is not a process. A s
 | **Controlled reboots** | Reboot only when required, and only if allowed | `stat`, `reboot`, variables |
 | **Post-checks** | Prove critical services survived | `service_facts`, `assert` |
 | **Evidence** | Every host produces a record | `copy`, `fetch` |
-| **Repeatable** | Same code, different variables | `group_vars`, `-e`, roles, tags |
+| **Repeatable** | Same code, different variables | `-e`, roles, tags |
 
 ### 2.5 Aligning with your existing patching automation
 
@@ -122,7 +121,7 @@ You rarely start from zero. Most teams already have cron scripts, `unattended-up
 
 | If you already have | Keep | Ansible adds |
 |---|---|---|
-| Cron-driven `apt-get upgrade` scripts | The schedule and maintenance windows | Idempotent tasks, per-host reports, rings, safe failure |
+| Cron-driven `apt-get upgrade` scripts | The schedule and maintenance windows | Idempotent tasks, per-host reports, batching, safe failure |
 | `unattended-upgrades` on hosts | Automatic security patching | Its config managed as code (no drift), reboot orchestration, verification |
 | A patch management tool (for example Canonical Landscape) | Approval and inventory workflow | Pre/post checks and reboot control around it |
 | A change/ticket system | Approvals and change windows | Ticket ID passed in with `-e`, recorded in the report |
@@ -138,7 +137,7 @@ You rarely start from zero. Most teams already have cron scripts, `unattended-up
 | How do you know a patch run succeeded? | |
 | What is the rollback plan? | |
 
-You will translate these answers into variables, groups, and checks in Part B.
+You will translate these answers into variables and checks in Part B.
 
 ---
 
@@ -149,7 +148,7 @@ You will translate these answers into variables, groups, and checks in Part B.
 | Item | Details |
 |---|---|
 | Control node | Any Linux/macOS/WSL host with Ansible 2.14+ |
-| Target hosts | 1–3 Ubuntu VMs (one is enough; extra hosts make rings more interesting) |
+| Target hosts | 1–3 Ubuntu VMs (one is enough) |
 | Access | SSH key login, user with passwordless `sudo` |
 | Network | Targets can reach the control node on TCP 8000 |
 
@@ -157,8 +156,8 @@ You will translate these answers into variables, groups, and checks in Part B.
 
 ```bash
 mkdir ansible-workshop && cd ansible-workshop
-mkdir -p group_vars templates artifacts reports
-touch ansible.cfg inventory.ini baseline.yml patch.yml
+mkdir -p templates artifacts reports
+touch ansible.cfg inventory.ini vars.yml baseline.yml patch.yml
 ```
 
 Target layout at the end:
@@ -167,13 +166,9 @@ Target layout at the end:
 ansible-workshop/
 ├── ansible.cfg
 ├── inventory.ini
+├── vars.yml
 ├── baseline.yml
 ├── patch.yml
-├── group_vars/
-│   ├── all.yml
-│   ├── ubuntu_dev.yml
-│   ├── ubuntu_staging.yml
-│   └── ubuntu_prod.yml
 ├── templates/
 │   └── 99-baseline.conf.j2
 ├── artifacts/
@@ -191,34 +186,31 @@ interpreter_python = auto_silent
 retry_files_enabled = False
 ```
 
-### 3.4 `inventory.ini` (the rings)
+### 3.4 `inventory.ini` and variables
+
+Keep the inventory flat: one group, every host in it.
 
 ```ini
-[ubuntu_dev]
-ubu-dev-01 ansible_host=192.168.56.31
-
-[ubuntu_staging]
-ubu-stg-01 ansible_host=192.168.56.41
-
-[ubuntu_prod]
-ubu-prd-01 ansible_host=192.168.56.51
-ubu-prd-02 ansible_host=192.168.56.52
-
-[ubuntu:children]
-ubuntu_dev
-ubuntu_staging
-ubuntu_prod
+[ubuntu]
+ubu-01 ansible_host=192.168.56.31
+# add more hosts here, one per line
 
 [ubuntu:vars]
 ansible_user=ubuntu
 ansible_python_interpreter=/usr/bin/python3
 ```
 
-Only one VM? Put it in `[ubuntu_dev]` and keep the other groups empty (delete their host lines). Everything still works.
+Only one VM? Just keep the single host line. Everything still works.
 
-**Why groups?** A group is a *ring*. Later you will patch `ubuntu_dev` first and `ubuntu_prod` last, using the same playbook.
+**Connectivity test**
 
-### 3.5 Variables: `group_vars/all.yml`
+```bash
+ansible ubuntu -m ansible.builtin.ping
+```
+
+- [ ] Every host returns `pong`
+
+Put every variable the two playbooks need in one place, `vars.yml`, and load it explicitly with `vars_files:` in each playbook (you'll add that in Step A1 and Step B1):
 
 ```yaml
 # ---- artifact server (your control node, used in step A4) ----
@@ -245,32 +237,7 @@ patch_critical_services:
   - cron.service
 ```
 
-Ring-specific overrides:
-
-`group_vars/ubuntu_dev.yml`
-```yaml
-patch_allow_reboot: true
-```
-
-`group_vars/ubuntu_staging.yml`
-```yaml
-patch_allow_reboot: true
-```
-
-`group_vars/ubuntu_prod.yml`
-```yaml
-patch_allow_reboot: false   # prod reboots happen in the maintenance window, see B12
-```
-
-**Why `group_vars` and not `vars:` inside the playbook?** Variable precedence. Play-level `vars:` beat inventory `group_vars`, so you could never override them per ring. Defaults go in `group_vars/all.yml` (lowest priority among inventory vars), ring overrides in the ring's own file, and one-off overrides on the command line with `-e` (highest).
-
-### 3.6 Connectivity test
-
-```bash
-ansible ubuntu -m ansible.builtin.ping
-```
-
-- [ ] Every host returns `pong`
+**Why one flat file instead of per-host or per-group variable files?** For this workshop you're managing one pool of hosts, so there's nothing to split by. Everything a task needs lives in `vars.yml`; anything you want to change for a single run (for example allowing a reboot) is overridden on the command line with `-e`, which always wins over `vars_files`. If you later group hosts into environments, that's the point where variable files split by group start to earn their keep — not before.
 
 ---
 
@@ -376,16 +343,18 @@ Use the docs site or `ansible-doc` to fill in the **module** column. Then write 
 
 ### Step A1 – Create the play skeleton
 
-**Requirement:** a play that targets a ring chosen at run time, defaulting to the safest ring.
+**Requirement:** a play that targets the `ubuntu` group and loads the shared variables.
 
 **Add to `baseline.yml`:**
 
 ```yaml
 ---
 - name: Enforce Ubuntu configuration baseline
-  hosts: "{{ target | default('ubuntu_dev') }}"
+  hosts: "{{ target | default('ubuntu') }}"
   become: true
   gather_facts: true
+  vars_files:
+    - vars.yml
 
   tasks: []
 ```
@@ -394,11 +363,10 @@ Use the docs site or `ansible-doc` to fill in the **module** column. Then write 
 
 | Line | Reason |
 |---|---|
-| `hosts: "{{ target \| default('ubuntu_dev') }}"` | The same playbook serves every ring. The **default is dev**, so a forgotten `-e` can never touch production. |
+| `hosts: "{{ target \| default('ubuntu') }}"` | Defaults to the whole inventory group, but `-e target=ubu-01` lets you target a single host while you're learning. |
+| `vars_files: [vars.yml]` | Pulls in every variable from Section 3.4 without repeating it in the playbook. |
 | `become: true` | Package, file, and service changes need root. |
 | `gather_facts: true` | We need `ansible_facts` (OS name, version, mounts) in later tasks. |
-
-> `hosts:` is resolved *before* per-host variables exist, so `target` must come from `-e` (or the play), not from `group_vars`.
 
 **Run it**
 ```bash
@@ -496,7 +464,7 @@ sha256sum artifacts/issue.net
 cd artifacts && python3 -m http.server 8000
 ```
 
-Leave the server running in a second terminal. Copy the SHA-256 hash into `group_vars/all.yml` as `issue_net_sha256`. If the control node has `ufw` enabled, allow the port: `sudo ufw allow 8000/tcp`.
+Leave the server running in a second terminal. Copy the SHA-256 hash into `vars.yml` as `issue_net_sha256`. If the control node has `ufw` enabled, allow the port: `sudo ufw allow 8000/tcp`.
 
 Test from a target host:
 
@@ -557,7 +525,7 @@ curl -I http://192.168.56.1:8000/issue.net
 **Check the result on a host**
 
 ```bash
-ansible ubuntu_dev -b -m ansible.builtin.command -a "cat /etc/issue.net"
+ansible ubuntu -b -m ansible.builtin.command -a "cat /etc/issue.net"
 ```
 
 **Stretch:** register the result and print it.
@@ -627,7 +595,7 @@ Banner /etc/issue.net
 |---|---|
 | **Drop-in file** in `sshd_config.d/` | Ubuntu's `sshd_config` includes `sshd_config.d/*.conf`. Package upgrades can replace `sshd_config` but leave your drop-in alone. It is also easier to read, diff, and audit. |
 | Filename starts with `99-` | sshd uses the **first** value it finds for a setting. Ubuntu's default file already sets some values, so read order matters. Check the include order if a setting seems ignored. |
-| `template` | Values come from variables, so each ring can have different values. `{{ ansible_managed }}` warns humans not to edit by hand. |
+| `template` | Values come from variables. `{{ ansible_managed }}` warns humans not to edit by hand. |
 | **Handlers** | They run **only when the file changed**, and only once at the end of the play. Idempotent runs never restart SSH. |
 | **Validate before restart** | Handlers run in the order they are **defined**. If `sshd -t` fails, the host fails and `Restart ssh` never runs, so you do not lock yourself out with a broken config. |
 | `changed_when: false` | `sshd -t` only reads. It should never report "changed". |
@@ -707,7 +675,7 @@ ansible-playbook baseline.yml
 
 ### Step A9 – Cause drift on purpose
 
-SSH into a dev host and break things:
+SSH into a target host and break things:
 
 ```bash
 echo "tampered" | sudo tee /etc/issue.net
@@ -767,7 +735,7 @@ ansible-playbook baseline.yml            # expect changed=0
 **Create a simple drift report you can run on a schedule:**
 
 ```bash
-ansible-playbook baseline.yml -e target=ubuntu --check --diff | tee reports/drift-$(date +%F).log
+ansible-playbook baseline.yml --check --diff | tee reports/drift-$(date +%F).log
 grep -E 'changed=[1-9]' reports/drift-$(date +%F).log && echo "DRIFT DETECTED" || echo "NO DRIFT"
 ```
 
@@ -779,7 +747,7 @@ grep -E 'changed=[1-9]' reports/drift-$(date +%F).log && echo "DRIFT DETECTED" |
 - A task that depends on the result of a skipped task may behave differently.
 - Not every module supports check mode. Read **Attributes** in the docs.
 
-**Choose an enforcement pattern (discuss with your partner):** which pattern from Section 2.3 would you use for `ubuntu_dev`? For `ubuntu_prod`? Why?
+**Choose an enforcement pattern (discuss with your partner):** which pattern from Section 2.3 would you use here? What would change if this fleet were production? Why?
 
 - [ ] Drift remediated, second run `changed=0`
 - [ ] Drift report produced
@@ -788,12 +756,12 @@ grep -E 'changed=[1-9]' reports/drift-$(date +%F).log && echo "DRIFT DETECTED" |
 
 # Part B – Patch Management Playbook
 
-**Goal:** a playbook that patches Ubuntu servers safely, ring by ring, with pre-checks, holds, controlled reboots, post-checks, and a report per host.
+**Goal:** a playbook that patches Ubuntu servers safely, in small batches, with pre-checks, holds, controlled reboots, post-checks, and a report per host.
 
 **Design in one picture**
 
 ```text
-choose ring (-e patch_ring=...)   choose batch size (-e patch_serial=...)
+choose batch size (-e patch_serial=...)
              │
              ▼
    ┌── for each batch of hosts ──────────────────────────────┐
@@ -811,11 +779,13 @@ Start a fresh `patch.yml` now.
 
 ```yaml
 ---
-- name: Patch Ubuntu servers (ring-based rollout)
-  hosts: "{{ patch_ring | default('ubuntu_dev') }}"
+- name: Patch Ubuntu servers
+  hosts: "{{ target | default('ubuntu') }}"
   become: true
   serial: "{{ patch_serial | default(1) }}"
   any_errors_fatal: true
+  vars_files:
+    - vars.yml
 
   tasks: []
 ```
@@ -826,10 +796,10 @@ Start a fresh `patch.yml` now.
 
 | Line | Reason |
 |---|---|
-| `patch_ring` default `ubuntu_dev` | Safe default. Prod must be chosen **explicitly**. |
-| `serial` default `1` | One host at a time. If patching breaks something, only one host is affected. Use `25%` or `2` for larger rings. |
+| `serial` default `1` | One host at a time. If patching breaks something, only one host is affected. Use `25%` or `2` for a bigger fleet. |
 | `any_errors_fatal: true` | If one host fails, the whole run stops before the next batch. |
-| Set with `-e`, not `group_vars` | `hosts` and `serial` are play-level settings, evaluated before per-host variables. |
+| `vars_files: [vars.yml]` | Same shared variables as `baseline.yml`, kept in one file. |
+| `serial` set with `-e`, not in `vars.yml` | `serial` is a play-level setting, evaluated before host variables are applied, so it must come from extra vars or the play itself. |
 
 **Run:** `ansible-playbook patch.yml --syntax-check`
 
@@ -861,7 +831,7 @@ Start a fresh `patch.yml` now.
 
 **Requirement:** fail the host early if `/` has less free space than `patch_min_free_mb`.
 
-**Research:** run `ansible -m ansible.builtin.setup ubuntu_dev -a "filter=ansible_mounts"`. Find `mount`, `size_available` (in **bytes**).
+**Research:** run `ansible -m ansible.builtin.setup ubuntu -a "filter=ansible_mounts"`. Find `mount`, `size_available` (in **bytes**).
 
 ```yaml
     - name: Assert enough free disk space on /
@@ -981,7 +951,7 @@ We will put the patch steps inside one `block:` so they share error handling lat
 
 </details>
 
-**Test it:** set `patch_hold_packages: [curl]` in `group_vars/ubuntu_dev.yml` and re-run. Verify with `apt-mark showhold` on the host. Then set it back to `[]`, or add an "unhold" task as a stretch goal.
+**Test it:** set `patch_hold_packages: [curl]` in `vars.yml` and re-run. Verify with `apt-mark showhold` on the host. Then set it back to `[]`, or add an "unhold" task as a stretch goal.
 
 **Why**
 
@@ -1023,13 +993,13 @@ Add inside the `block:` after the hold task:
 ansible-playbook patch.yml --check --diff
 ```
 
-Then run for real on dev:
+Then run for real:
 
 ```bash
 ansible-playbook patch.yml
 ```
 
-- [ ] Updates applied on the dev host; second run shows `ok`
+- [ ] Updates applied; second run shows `ok`
 
 ---
 
@@ -1054,7 +1024,7 @@ ansible-playbook patch.yml
 
 ### Step B9 – Reboot only when required **and** allowed (**your turn**)
 
-**Requirement:** reboot if the flag exists and the ring allows reboots.
+**Requirement:** reboot if the flag exists and reboots are currently allowed.
 
 ```yaml
         - name: Reboot when required and permitted
@@ -1083,19 +1053,19 @@ ansible-playbook patch.yml
 | Choice | Reason |
 |---|---|
 | `reboot` module | It waits for the host to go down, come back, and answer SSH before continuing. A manual `shell: reboot` with `wait_for` is fragile. |
-| `patch_allow_reboot` | The **policy** lives in a variable. Dev/staging: `true`. Prod: `false` until the maintenance window. |
+| `patch_allow_reboot` | The **policy** lives in a variable, defaulting to `false` in `vars.yml`. |
 | `reboot_timeout: 900` | Some servers take several minutes to boot (fsck, slow disks, hardware). |
 | `| bool` | Variables passed with `-e` can arrive as strings. `bool` turns `"true"` into a real boolean. |
 
-**Prod maintenance window pattern:** the ring is patched during the day *without* rebooting. In the window, run:
+**Maintenance window pattern:** patch during the day *without* rebooting (the default). In the window, run:
 
 ```bash
-ansible-playbook patch.yml -e patch_ring=ubuntu_prod -e patch_allow_reboot=true
+ansible-playbook patch.yml -e patch_allow_reboot=true
 ```
 
-`-e` beats `group_vars`, so no file edit is needed.
+`-e` beats `vars.yml`, so no file edit is needed.
 
-- [ ] Dev host reboots only when `/var/run/reboot-required` exists
+- [ ] Host reboots only when `/var/run/reboot-required` exists
 
 ---
 
@@ -1159,7 +1129,6 @@ Add **after** the `block:` content, as `rescue` and `always` sections of the sam
             content: |
               host: {{ inventory_hostname }}
               time: {{ ansible_facts['date_time']['iso8601'] }}
-              ring: {{ patch_ring | default('ubuntu_dev') }}
               pending_before: {{ pending_count | default('n/a') }}
               packages_changed: {{ (patch_result | default({})).changed | default(false) }}
               reboot_required: {{ reboot_flag.stat.exists | default('unknown') }}
@@ -1196,53 +1165,52 @@ find reports -name 'patch-*.log' -exec cat {} \;
 
 ---
 
-### Step B12 – Roll out ring by ring
+### Step B12 – Roll out gradually
 
-This is where the design pays off. **Same playbook, different variables.**
+This is where the design pays off. **Same playbook, different variables, no separate files to edit.**
 
-**1. Readiness check for all rings (read-only):**
+**1. Readiness check for the whole fleet (read-only):**
 ```bash
-for r in ubuntu_dev ubuntu_staging ubuntu_prod; do
-  ansible-playbook patch.yml -e patch_ring=$r --tags precheck
-done
+ansible-playbook patch.yml --tags precheck
 ```
 
-**2. Dev, one host at a time:**
+**2. Patch one host at a time, no reboot (the defaults):**
 ```bash
-ansible-playbook patch.yml -e patch_ring=ubuntu_dev
+ansible-playbook patch.yml
 ```
 
-**3. Staging, after dev is verified:**
+**3. Widen the batch once you trust the result:**
 ```bash
-ansible-playbook patch.yml -e patch_ring=ubuntu_staging
+ansible-playbook patch.yml -e patch_serial=2
 ```
 
-**4. Prod in small batches, no reboot (`patch_allow_reboot` is `false` from `group_vars/ubuntu_prod.yml`):**
+**4. Reboot window, once patching is verified:**
 ```bash
-ansible-playbook patch.yml -e patch_ring=ubuntu_prod -e patch_serial=1
+ansible-playbook patch.yml -e patch_serial=2 -e patch_allow_reboot=true
 ```
 
-**5. Prod reboot window:**
+**5. Target a single host while testing:**
 ```bash
-ansible-playbook patch.yml -e patch_ring=ubuntu_prod -e patch_serial=1 -e patch_allow_reboot=true
+ansible-playbook patch.yml -e target=ubu-01
 ```
 
 **Discussion questions**
 
-1. What happens to the rollout if `ubu-prd-01` fails its post-check? Why?
+1. What happens to the rollout if a host fails its post-check? Why?
 2. How would you allow 10% of hosts to fail before stopping? (Hint: `max_fail_percentage`, see `ansible-doc -t keyword max_fail_percentage`)
 3. What changes if you have 500 hosts? (Think `serial: [1, 5, "25%"]`, `forks`, and `throttle`.)
-4. How does this map to your worksheet in Section 2.5?
+4. If you needed to patch some hosts on a different schedule than others (say, a small set of sensitive servers patched last, under change control), how would you extend this setup? (Hint: a second inventory group and a `-e target=...` override is the smallest change; a full split into per-group variable files is the next step up, and only worth it once the override list gets long.)
+5. How does this map to your worksheet in Section 2.5?
 
 **Stretch goals**
 
 - [ ] Add an "unhold" task so packages removed from `patch_hold_packages` are released
 - [ ] Add a maintenance-window guard: assert the host's local hour (`ansible_facts['date_time']['hour']`) is within an allowed range
 - [ ] Add a `patch_ticket` variable required via `-e` and print it in the report
-- [ ] Investigate limiting to security updates using the `default_release` parameter of `apt` (read the docs, then test it on **dev** first and compare the package list)
+- [ ] Investigate limiting to security updates using the `default_release` parameter of `apt` (read the docs, then test it and compare the package list)
 - [ ] Convert `patch.yml` into a role named `patching` (`defaults/`, `tasks/`, `templates/`, `meta/`), keeping `patch.yml` as a 10-line wrapper
 
-- [ ] Ring-based run completed on at least dev and one more ring (or dev with different `serial`)
+- [ ] A full rollout completed with at least two different `patch_serial` values
 
 ---
 
@@ -1253,8 +1221,8 @@ ansible-playbook patch.yml -e patch_ring=ubuntu_prod -e patch_serial=1 -e patch_
 Patches can overwrite configuration. Prove your baseline survives.
 
 ```bash
-ansible-playbook patch.yml -e patch_ring=ubuntu_dev
-ansible-playbook baseline.yml -e target=ubuntu_dev --check --diff
+ansible-playbook patch.yml
+ansible-playbook baseline.yml --check --diff
 ```
 
 **Predict:** `changed=0`? If not, which task detected drift, and what does that tell you about the upgrade?
@@ -1270,26 +1238,26 @@ Create `site.yml`:
 - import_playbook: baseline.yml
 ```
 
-**Why:** enforce a clean baseline, patch, then verify the baseline again. Note you would normally pass `-e target=... -e patch_ring=...` to the same ring.
+**Why:** enforce a clean baseline, patch, then verify the baseline again.
 
 ```bash
-ansible-playbook site.yml -e target=ubuntu_dev -e patch_ring=ubuntu_dev
+ansible-playbook site.yml
 ```
 
 ### C3 – Scheduling and automation
 
 | Job | How |
 |---|---|
-| Nightly **drift report** (prod) | Cron/systemd timer on the control node running `baseline.yml --check --diff`, then alert on `changed=[1-9]` |
-| Automatic **enforcement** (dev/staging) | Scheduled run of `baseline.yml` without `--check` |
-| **Patch window** | Scheduled job or manual approval that runs `patch.yml -e patch_ring=...` |
+| Nightly **drift report** | Cron/systemd timer on the control node running `baseline.yml --check --diff`, then alert on `changed=[1-9]` |
+| Automatic **enforcement** | Scheduled run of `baseline.yml` without `--check` |
+| **Patch window** | Scheduled job or manual approval that runs `patch.yml` |
 | **Pull-based** enforcement | `ansible-pull -U <git-url> baseline.yml` on a timer on each host |
-| **Enterprise** | Ansible Automation Platform or AWX: schedules, RBAC, credentials, and **surveys** to ask for `patch_ring`, `patch_serial`, `patch_ticket` |
+| **Enterprise** | Ansible Automation Platform or AWX: schedules, RBAC, credentials, and **surveys** to ask for `patch_serial`, `patch_ticket` |
 
 Example cron entry (note the escaped `%`):
 
 ```cron
-0 2 * * * cd /opt/ansible-workshop && ansible-playbook baseline.yml -e target=ubuntu_prod --check --diff >> /var/log/drift/$(date +\%F).log 2>&1
+0 2 * * * cd /opt/ansible-workshop && ansible-playbook baseline.yml --check --diff >> /var/log/drift/$(date +\%F).log 2>&1
 ```
 
 ### C4 – Manage `unattended-upgrades` as code (bonus)
@@ -1299,7 +1267,7 @@ Existing automation often includes `unattended-upgrades`. Use what you learned:
 - Ensure the package is installed (`apt`)
 - Deploy `/etc/apt/apt.conf.d/20auto-upgrades` with a `template`
 - Add it to `baseline.yml` so drift is detected
-- Decide: should it coexist with your rings, or be disabled in prod so patching stays under your control? Write your recommendation in two sentences.
+- Decide: should it coexist with your patch runs, or be disabled so patching stays under your control? Write your recommendation in two sentences.
 
 ---
 
@@ -1307,24 +1275,24 @@ Existing automation often includes `unattended-upgrades`. Use what you learned:
 
 1. Why is `state: present` used in the baseline but `upgrade: dist` in the patch playbook?
 2. What are the two jobs of `checksum` in `get_url`?
-3. Why do `hosts` and `serial` use `-e` variables rather than `group_vars`?
+3. Why does `serial` use an `-e` variable rather than living in `vars.yml`?
 4. What does a `rescue` section do to the failed state of a host, and why do we call `fail` inside it?
 5. Why are handlers ordered "validate, then restart"?
 6. Which flag detects drift without changing anything? Which shows exactly what would change?
 7. Why does `check_mode: false` appear on read-only `command` tasks?
-8. Your prod ring is patched during the day but must reboot at night. How do you do that with the same playbook?
+8. Your fleet is patched during the day but must reboot at night. How do you do that with the same playbook?
 
 <details>
 <summary>Answers</summary>
 
 1. The baseline must keep the system at a **defined** state without unplanned upgrades. Upgrades are a deliberate, controlled action in the patch playbook.
 2. Integrity verification of the download, and drift enforcement (re-download only when the local file's hash differs).
-3. They are play-level settings, resolved before per-host variables exist, so they must come from extra vars or the play.
+3. It is a play-level setting, resolved before host variables are applied, so it must come from extra vars or the play.
 4. `rescue` clears the failure, so the host would look successful. Calling `fail` re-raises it so `any_errors_fatal` can stop the rollout.
 5. If the config is invalid, validation fails and restart never runs, so SSH is not restarted with a broken config.
 6. `--check` and `--diff`.
 7. Commands are skipped in check mode. Read-only commands whose output later tasks depend on must still run.
-8. Set `patch_allow_reboot: false` in the ring's `group_vars` for the day run, then run again in the window with `-e patch_allow_reboot=true`.
+8. Leave `patch_allow_reboot: false` (the default) for the day run, then run again in the window with `-e patch_allow_reboot=true`.
 
 </details>
 
@@ -1334,7 +1302,7 @@ Existing automation often includes `unattended-upgrades`. Use what you learned:
 
 **Preparation**
 
-- Provision 1–3 Ubuntu VMs per participant (or shared dev/staging/prod VMs per team) and test SSH and `sudo`.
+- Provision 1–3 Ubuntu VMs per participant (or a shared pool per team) and test SSH and `sudo`.
 - Start one shared artifact server for the whole room, or have each participant run their own on the control node.
 - Keep a solution repository with the finished `baseline.yml`, `patch.yml`, and templates, released after each Part.
 
@@ -1354,7 +1322,7 @@ Existing automation often includes `unattended-upgrades`. Use what you learned:
 | SSH drop-in ignored | An earlier file sets the same option first. Inspect `sshd -T` output and file order. |
 | Reboot never returns | Increase `reboot_timeout`; confirm the VM's console. |
 | `changed` on every run | A non-idempotent task, often `command` without `changed_when`, or `get_url` with `force: true`. |
-| Variable ignored | Precedence. Check `-e` and play-level `vars:` versus `group_vars`. |
+| Variable ignored | Precedence. Check `-e` against `vars_files`. |
 
 ---
 
@@ -1363,9 +1331,11 @@ Existing automation often includes `unattended-upgrades`. Use what you learned:
 ```yaml
 ---
 - name: Enforce Ubuntu configuration baseline
-  hosts: "{{ target | default('ubuntu_dev') }}"
+  hosts: "{{ target | default('ubuntu') }}"
   become: true
   gather_facts: true
+  vars_files:
+    - vars.yml
 
   tasks:
     - name: Assert host is Ubuntu 22.04 or newer
@@ -1436,11 +1406,13 @@ Existing automation often includes `unattended-upgrades`. Use what you learned:
 
 ```yaml
 ---
-- name: Patch Ubuntu servers (ring-based rollout)
-  hosts: "{{ patch_ring | default('ubuntu_dev') }}"
+- name: Patch Ubuntu servers
+  hosts: "{{ target | default('ubuntu') }}"
   become: true
   serial: "{{ patch_serial | default(1) }}"
   any_errors_fatal: true
+  vars_files:
+    - vars.yml
 
   tasks:
     # ---------- PRE-CHECKS ----------
@@ -1560,7 +1532,6 @@ Existing automation often includes `unattended-upgrades`. Use what you learned:
             content: |
               host: {{ inventory_hostname }}
               time: {{ ansible_facts['date_time']['iso8601'] }}
-              ring: {{ patch_ring | default('ubuntu_dev') }}
               pending_before: {{ pending_count | default('n/a') }}
               packages_changed: {{ (patch_result | default({})).changed | default(false) }}
               reboot_required: {{ reboot_flag.stat.exists | default('unknown') }}
@@ -1585,14 +1556,14 @@ ansible-doc -s ansible.builtin.apt              # snippet with all options
 ansible-doc -t keyword serial                   # play/task keyword docs
 
 # --- Baseline / drift ---
-ansible-playbook baseline.yml -e target=ubuntu_dev
-ansible-playbook baseline.yml -e target=ubuntu --check --diff
+ansible-playbook baseline.yml
+ansible-playbook baseline.yml --check --diff
 
 # --- Patching ---
-ansible-playbook patch.yml --tags precheck -e patch_ring=ubuntu_prod
+ansible-playbook patch.yml --tags precheck
 ansible-playbook patch.yml --check --diff
-ansible-playbook patch.yml -e patch_ring=ubuntu_staging -e patch_serial=2
-ansible-playbook patch.yml -e patch_ring=ubuntu_prod -e patch_allow_reboot=true
+ansible-playbook patch.yml -e patch_serial=2
+ansible-playbook patch.yml -e patch_allow_reboot=true
 
 # --- Debugging ---
 ansible-playbook patch.yml --syntax-check
