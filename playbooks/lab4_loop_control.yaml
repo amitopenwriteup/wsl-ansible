@@ -1,0 +1,23 @@
+- name: test
+  hosts: all
+  become: true
+  tasks:
+    - name: Ensure groups exist
+      ansible.builtin.group:
+        name: "{{ user.groups }}"
+        state: present
+      loop:
+        - { name: "alice", groups: "sudo" }
+        - { name: "bob", groups: "developers" }
+      loop_control:
+        loop_var: user
+
+    - name: Create users
+      ansible.builtin.user:
+        name: "{{ user.name }}"
+        groups: "{{ user.groups }}"
+      loop:
+        - { name: "alice", groups: "sudo" }
+        - { name: "bob", groups: "developers" }
+      loop_control:
+        loop_var: user

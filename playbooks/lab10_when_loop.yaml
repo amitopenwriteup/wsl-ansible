@@ -1,0 +1,14 @@
+- name: test
+  hosts: all
+  vars:
+    packages:
+      - nginx
+      - git
+      - curl
+  tasks:
+    - name: Install only the packages not already listed
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ packages }}"
+      when: item != "curl"

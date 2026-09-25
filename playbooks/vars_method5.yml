@@ -1,0 +1,6 @@
+---
+package_name: apache2
+service_name: apache2
+http_port: 80
+max_connections: 1000
+enable_ssl: true

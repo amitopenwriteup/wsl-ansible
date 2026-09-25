@@ -1,0 +1,6 @@
+---
+- name: test1 
+  hosts: all
+  become: true
+  roles:
+   - gringolito.auto_patching

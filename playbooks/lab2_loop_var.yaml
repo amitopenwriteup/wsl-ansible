@@ -1,0 +1,13 @@
+- name: test
+  hosts: all
+  vars:
+    packages:
+      - nginx
+      - git
+      - curl
+  tasks:
+    - name: Install packages
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ packages }}"

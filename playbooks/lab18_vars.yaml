@@ -1,0 +1,10 @@
+- name: test
+  hosts: all
+  vars:
+    app_port: 8080
+  vars_files:
+    - secrets_lab18.yml
+  tasks:
+    - name: Show the app port
+      ansible.builtin.debug:
+        msg: "App runs on port {{ app_port }}"

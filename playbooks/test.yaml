@@ -1,0 +1,10 @@
+- name: test
+  hosts: all
+  tasks:
+    - name: Check if a file exists
+      ansible.builtin.stat:
+        path: /etc/myapp.conf
+      register: config_file
+    - name: print config
+      debug:
+        var: config_file

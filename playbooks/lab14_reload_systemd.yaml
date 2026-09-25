@@ -1,0 +1,13 @@
+- name: test
+  hosts: all
+  become: true
+  tasks:
+    - name: Copy app systemd service file
+      ansible.builtin.copy:
+        src: myapp.service
+        dest: /etc/systemd/system/myapp.service
+      notify: Reload systemd
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true

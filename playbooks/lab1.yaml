@@ -1,0 +1,6 @@
+- name: play1
+  hosts: local
+  tasks:
+    - name: Debug variables
+      ansible.builtin.debug:
+        msg: "App {{ app_name }} on port {{ app_port }}"

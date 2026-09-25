@@ -1,0 +1,27 @@
+- name: test
+  hosts: all
+  become: true
+  tasks:
+    - name: Ensure nginx is installed
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+
+    - name: Copy nginx config
+      ansible.builtin.copy:
+        src: nginx.conf
+        dest: /etc/nginx/nginx.conf
+      notify: Restart nginx
+
+    - name: Flush handlers now instead of at the end of the play
+      ansible.builtin.meta: flush_handlers
+
+    - name: Continue with more tasks after handler already ran
+      ansible.builtin.debug:
+        msg: "Handler already fired above"
+  handlers:
+    - name: Restart nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted

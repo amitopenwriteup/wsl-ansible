@@ -1,0 +1,16 @@
+- name: play1
+  hosts: local
+  vars:
+    package_name: apache2
+  tasks:
+    - name: Debug all variables
+      ansible.builtin.debug:
+        var: vars
+
+    - name: Debug package name
+      ansible.builtin.debug:
+        var: package_name
+
+    - name: Custom message
+      ansible.builtin.debug:
+        msg: "Installing {{ package_name }} on {{ ansible_hostname }}"

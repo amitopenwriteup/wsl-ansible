@@ -1,0 +1,11 @@
+- name: play1
+  hosts: local
+  become: true
+  tasks:
+    - name: Example from an Ansible Playbook
+      ansible.builtin.ping:
+
+    - name: Install apache httpd
+      ansible.builtin.apt:
+        name: apache2
+        state: present

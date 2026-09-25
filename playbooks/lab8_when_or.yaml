@@ -1,0 +1,7 @@
+- name: test
+  hosts: all
+  tasks:
+    - name: Run on CentOS or RedHat
+      ansible.builtin.debug:
+        msg: "Matched CentOS or RedHat!"
+      when: ansible_facts['distribution'] == "CentOS" or ansible_facts['distribution'] == "RedHat"

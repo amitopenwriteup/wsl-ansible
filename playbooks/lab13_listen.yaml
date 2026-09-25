@@ -1,0 +1,27 @@
+- name: test
+  hosts: all
+  become: true
+  tasks:
+    - name: Ensure nginx is installed
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+        update_cache: true
+
+    - name: Deploy new config
+      ansible.builtin.template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+      notify: "restart web stack"
+  handlers:
+    - name: Restart nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+      listen: "restart web stack"
+
+    - name: Clear nginx cache
+      ansible.builtin.file:
+        path: /var/cache/nginx
+        state: absent
+      listen: "restart web stack"

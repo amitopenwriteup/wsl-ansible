@@ -1,0 +1,35 @@
+---
+- name: Simulate PostgreSQL setup
+  hosts: all
+  become: yes
+  tasks:
+    - name: Ensure Python 3, pip, and PyMySQL are installed
+      package:
+        name:
+          - python3
+          - python3-pip
+          - python3-psycopg2
+        state: present
+    - name: Install MariaDB server
+      package:
+        name: postgresql
+        state: present
+
+    - name: Start and enable MariaDB service
+      service:
+        name: postgresql
+        state: started
+        enabled: true
+    - name: Create a new database with name "acme"
+      become_user: postgres
+      community.postgresql.postgresql_db:
+        name: acme
+        comment: My test DB
+    - name: Connect to acme database, create django user
+      become_user: postgres
+      community.postgresql.postgresql_user:
+        login_db: acme
+        name: django
+        password: ceec4eif7ya
+        expires: "Jan 31 2028"
+        login_unix_socket: "/var/run/postgresql/"

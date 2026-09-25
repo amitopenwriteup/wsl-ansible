@@ -1,0 +1,19 @@
+- name: test
+  hosts: all
+  tasks:
+    - name: Copy nginx config
+      ansible.builtin.copy:
+        src: nginx.conf
+        dest: /etc/nginx/nginx.conf
+      notify: Restart nginx
+
+    - name: Copy site config
+      ansible.builtin.copy:
+        src: site.conf
+        dest: /etc/nginx/sites-available/site.conf
+      notify: Restart nginx
+  handlers:
+    - name: Restart nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted

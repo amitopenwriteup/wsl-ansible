@@ -1,0 +1,12 @@
+- name: test
+  hosts: all
+  tasks:
+    - name: Check if a file exists
+      ansible.builtin.stat:
+        path: /etc/myapp.conf
+      register: config_file
+
+    - name: Only run if the file exists
+      ansible.builtin.debug:
+        msg: "Config found!"
+      when: config_file.stat.exists

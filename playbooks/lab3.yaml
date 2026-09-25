@@ -1,0 +1,11 @@
+- name: test
+  hosts: all
+  tasks:
+  - name: Install a list of packages
+    ansible.builtin.apt:
+      name: "{{ item }}"
+      state: present
+    loop:
+      - nginx
+      - git
+      - curl

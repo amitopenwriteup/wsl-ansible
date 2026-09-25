@@ -1,0 +1,7 @@
+- name: play1
+  hosts: local
+  tasks:
+    - name: Install and start service
+      ansible.builtin.apt:
+        name: "{{ package_name }}"
+        state: present

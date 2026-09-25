@@ -1,0 +1,9 @@
+---
+packages:
+  - apache2
+  - curl
+  - wget
+
+service_name: apache2
+http_port: 80
+state: present

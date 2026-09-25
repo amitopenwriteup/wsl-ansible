@@ -1,0 +1,10 @@
+- name: test
+  hosts: all
+  tasks:
+    - name: Only run on CentOS 8+ web servers
+      ansible.builtin.debug:
+        msg: "Matched!"
+      when:
+        - ansible_facts['distribution'] == "CentOS"
+        - ansible_facts['distribution_major_version'] | int >= 8
+        - "'webservers' in group_names"

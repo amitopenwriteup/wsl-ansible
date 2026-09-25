@@ -1,0 +1,39 @@
+- name: test
+  hosts: all
+  become: true
+  tasks:
+    - name: Ensure /opt/app exists
+      ansible.builtin.file:
+        path: /opt/app
+        state: directory
+        mode: "0755"
+
+    - name: Deploy a start script that deliberately fails (for the demo)
+      ansible.builtin.copy:
+        dest: /opt/app/start.sh
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          echo "Attempting to start the app..."
+          exit 1
+
+    - name: Deploy a rollback script that succeeds (for the demo)
+      ansible.builtin.copy:
+        dest: /opt/app/rollback.sh
+        mode: "0755"
+        content: |
+          #!/bin/bash
+          echo "Rolling back changes..."
+          exit 0
+
+    - name: Attempt risky operation with error handling
+      block:
+        - name: Try to start the app
+          ansible.builtin.command: /opt/app/start.sh
+      rescue:
+        - name: Roll back on failure
+          ansible.builtin.command: /opt/app/rollback.sh
+      always:
+        - name: Always log the attempt
+          ansible.builtin.debug:
+            msg: "Deployment attempt finished"

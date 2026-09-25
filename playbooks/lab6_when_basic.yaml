@@ -1,0 +1,8 @@
+- name: test
+  hosts: all
+  tasks:
+    - name: Restart service only on Debian-family hosts
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+      when: ansible_facts['os_family'] == "Debian"

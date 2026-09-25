@@ -1,0 +1,11 @@
+- name: play1
+  hosts: local
+  become: true
+  tasks:
+    - name: Install package
+      ansible.builtin.apt:
+        name: "{{ package_name }}"
+        state: present
+    - name: Display info
+      ansible.builtin.debug:
+        msg: "Service {{ service_name }} running on port {{ http_port }}"

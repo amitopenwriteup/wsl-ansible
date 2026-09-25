@@ -1,0 +1,24 @@
+- name: play1
+  hosts: local
+  vars:
+    name: "apache2"
+    description: "Web server"
+    packages:
+      - apache2
+      - nginx
+      - mysql-server
+    server:
+      name: webserver1
+      ip: 192.168.1.10
+      http_port: 80
+
+  tasks:
+    - name: Install packages
+      ansible.builtin.apt:
+        name: "{{ item }}"
+        state: present
+      loop: "{{ packages }}"
+
+    - name: Display server info
+      ansible.builtin.debug:
+        msg: "Server {{ server.name }} at {{ server.ip }}:{{ server.http_port }}"
