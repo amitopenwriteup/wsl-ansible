@@ -25,7 +25,7 @@
 ```yaml
 ---
 - name: Ubuntu Patch Management Playbook
-  hosts: patch_targets
+  hosts: all
   become: true
   serial: "{{ patch_batch_size | default('20%') }}"
   vars:
